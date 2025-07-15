@@ -1,3 +1,5 @@
+import mongoose from "mongoose"
+
 export interface SignupRequestBody {
     fullname: string,
     email: string,

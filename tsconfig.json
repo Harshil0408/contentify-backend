@@ -12,11 +12,12 @@
     "noEmit": true,
     "typeRoots": [
       "./node_modules/@types",
-      "./types"
-    ],
+      "./src/types"
+    ]
   },
   "include": [
-    "src"
+    "src",
+    "src/types"
   ],
   "exclude": [
     "node_modules",

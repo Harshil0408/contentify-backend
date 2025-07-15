@@ -66,6 +66,11 @@ const signupUser = asyncHandler(async (req: Request<{}, {}, SignupRequestBody> &
         coverImage: '',
         isOnboarded: false,
         refreshToken: '',
+        age: null,
+        language: '',
+        city: '',
+        phoneNo: null,
+        hobby: [],
         watchHistory: []
     })
 

@@ -32,6 +32,11 @@ passport.use(
                         avatar: profile.photos?.[0].value || "",
                         coverImage: "",
                         watchHistory: [],
+                        age: null,
+                        language: '',
+                        city: '',
+                        phoneNo: null,
+                        hobby: [],
                         isOnboarded: false,
                         refreshToken: ""
                     });

@@ -4,6 +4,7 @@ import { isAuthenticated } from '../middlewares/authMiddleware.ts'
 import { loginUser, logoutUser, signupUser } from '../controllers/auth.controller.ts'
 import { upload } from '../middlewares/multer.middleware.ts'
 import { IUser } from '../models/user.model.ts'
+import { onboarding } from '../controllers/user.controller.ts'
 
 const router = express.Router()
 
@@ -36,6 +37,13 @@ router
     .route("/signin")
     .post(
         loginUser
+    )
+
+router
+    .route('/onboarding')
+    .patch(
+        isAuthenticated,
+        onboarding
     )
 
 router.get("/logout", isAuthenticated, logoutUser)

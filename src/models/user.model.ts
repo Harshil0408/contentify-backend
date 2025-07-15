@@ -13,6 +13,11 @@ export interface IUser extends Document {
     coverImage?: string;
     watchHistory?: mongoose.Types.ObjectId;
     password: string;
+    age: number;
+    language: string;
+    city: string;
+    phoneNo: number;
+    hobby: string[];
     refreshToken?: string;
     googleId?: string;
     isOnboarded: boolean;
@@ -59,6 +64,21 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
                 ref: "Video"
             }
         ],
+        age: {
+            type: Number
+        },
+        language: {
+            type: String
+        },
+        city: {
+            type: String
+        },
+        phoneNo: {
+            type: Number
+        },
+        hobby: {
+            type: []
+        },
         googleId: {
             type: String,
             unique: true,
@@ -66,7 +86,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
         },
         password: {
             type: String,
-           
+
 
         },
         isOnboarded: {

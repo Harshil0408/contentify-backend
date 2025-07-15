@@ -66,9 +66,7 @@ const userSchema: Schema<IUser> = new mongoose.Schema(
         },
         password: {
             type: String,
-            required: function (this: any) {
-                return !this.googleID;
-            }
+           
 
         },
         isOnboarded: {

@@ -3,6 +3,7 @@ import passport from 'passport'
 import { isAuthenticated } from '../middlewares/authMiddleware.ts'
 import { loginUser, logoutUser, signupUser } from '../controllers/auth.controller.ts'
 import { upload } from '../middlewares/multer.middleware.ts'
+import { IUser } from '../models/user.model.ts'
 
 const router = express.Router()
 
@@ -10,9 +11,14 @@ router.get('/google', passport.authenticate("google", { scope: ['profile', 'emai
 
 router.get('/google/callback', passport.authenticate("google", {
     failureRedirect: "/login",
-    session: true
+    session: false
 }), (req, res) => {
-    res.redirect("/dashboard")
+    const user = req.user as IUser
+
+    const accessToken = user.generateAccessToken()
+    const refreshToken = user.generateRefreshToken()
+
+    res.redirect(`http://localhost:5173/oauth-success?accessToken=${accessToken}&refreshToken=${refreshToken}`)
 })
 
 router.get("/me", isAuthenticated, (req, res) => {
@@ -27,7 +33,7 @@ router
     )
 
 router
-    .route("/login")
+    .route("/signin")
     .post(
         loginUser
     )

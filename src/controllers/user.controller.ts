@@ -4,15 +4,10 @@ import asyncHandler from "../utils/asyncHandler.ts";
 import { IUser, User } from "../models/user.model.ts";
 import ApiError from "../utils/ApiError.ts";
 import ApiResponse from "../utils/ApiResponse.ts";
-
-const getUserIdFromRequest = (req: Request): string => {
-    if (!req.user) throw new Error("Unauthorized");
-    return (req.user as IUser)._id.toString();
-};
+import { getUserIdFromRequest } from "../constants/index.ts";
 
 
 const onboarding = asyncHandler(async (req: Request<{}, {}, OnboardingPayload>, res: Response) => {
-    console.log("called")
     const userId = getUserIdFromRequest(req)
 
     console.log(userId)

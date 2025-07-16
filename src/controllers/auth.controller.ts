@@ -99,6 +99,10 @@ const loginUser = asyncHandler(async (req: Request<{}, {}, LoginReqBody>, res: R
         throw new ApiError(404, "User not found")
     }
 
+    if (user.googleId) {
+        throw new ApiError(400, "This email is registered via Google. Please sign in using google.")
+    }
+
     await user?.comparePassword(password)
         .then(isMatch => {
             if (!isMatch) {

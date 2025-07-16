@@ -61,7 +61,10 @@ const videoSchema: Schema<VideoModel> = new mongoose.Schema({
         lowercase: true,
         required: true
     },
-
+    owner: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User"
+    },
     views: {
         type: Number,
         default: 0

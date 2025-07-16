@@ -9,7 +9,7 @@ import passport from "passport";
 import './services/passport.ts'
 import MongoStore from "connect-mongo";
 
-import authRoutes from "./routes/auth.routes.ts";
+
 
 const app: Application = express();
 
@@ -37,10 +37,13 @@ app.use(session({
     },
 }));
 
+import authRoutes from "./routes/auth.routes.ts";
+import videoRoutes from './routes/video.routes.ts'
 
 app.use(passport.initialize());
 app.use(passport.session());
 
 app.use("/auth", authRoutes);
+app.use("/video", videoRoutes)
 
 export { app };

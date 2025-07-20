@@ -1,15 +1,15 @@
-import { Request, Response } from "express";
-import asyncHandler from "../utils/asyncHandler.ts";
-import { GetAllVideosReqQuery, PublishVideoBody, PublishVideoFile, VideoUpdateBody } from "../types/video.types";
-import ApiError from "../utils/ApiError.ts";
-import { deleteCloudinaryFiles, uploadOnCloudinary } from "../utils/cloudinary.ts";
-import { Video, VideoDocument } from "../models/video.model.ts";
-import { getUserIdFromRequest } from "../constants/index.ts";
-import ApiResponse from "../utils/ApiResponse.ts";
-import { VideoView } from "../models/videoView.model.ts";
 import mongoose from "mongoose";
+import ApiError from "../utils/ApiError.ts";
+import { Request, Response } from "express";
 import { User } from "../models/user.model.ts";
+import ApiResponse from "../utils/ApiResponse.ts";
+import asyncHandler from "../utils/asyncHandler.ts";
+import { VideoView } from "../models/videoView.model.ts";
+import { getUserIdFromRequest } from "../constants/index.ts";
 import { Subscription } from "../models/subscription.model.ts";
+import { Video, VideoDocument } from "../models/video.model.ts";
+import { deleteCloudinaryFiles, uploadOnCloudinary } from "../utils/cloudinary.ts";
+import { GetAllVideosReqQuery, PublishVideoBody, PublishVideoFile, VideoUpdateBody } from "../types/video.types";
 
 interface VideoIdParams {
     videoId: string;
@@ -43,7 +43,7 @@ const publishVideo = asyncHandler(async (req: Request, res: Response) => {
         duration: `${Math.floor(duration)}`,
         videoFile: videoUploadedOnCloudinary?.secure_url,
         videoPublicId,
-        thumbnail,
+        thumbnail: thumbnailUploadedOnCloudinary?.secure_url,
         thumbnailPublicId,
         owner: userId,
         isPublished: true,
@@ -142,6 +142,20 @@ const getAllVideos = asyncHandler(async (req: Request, res: Response) => {
                 }
             },
             {
+                $lookup: {
+                    from: 'users',
+                    localField: 'owner',
+                    foreignField: '_id',
+                    as: "ownerDetails"
+                }
+            },
+            {
+                $unwind: {
+                    path: "$ownerDetails",
+                    preserveNullAndEmptyArrays: true
+                }
+            },
+            {
                 $project: {
                     title: 1,
                     description: 1,
@@ -150,7 +164,9 @@ const getAllVideos = asyncHandler(async (req: Request, res: Response) => {
                     duration: 1,
                     views: 1,
                     createdAt: 1,
-                    owner: 1
+                    owner: 1,
+                    username: "$ownerDetails.username",
+                    avatar: "$ownerDetails.avatar",
                 }
             }
         ]),
@@ -280,40 +296,48 @@ const deleteVideo = asyncHandler(async (req: Request, res: Response) => {
 })
 
 const getRecommandationVideos = asyncHandler(async (req: Request, res: Response) => {
-
-    const userId = getUserIdFromRequest(req)
-    const { currentVideoId } = req.query
+    const userId = getUserIdFromRequest(req);
+    const { currentVideoId } = req.query;
 
     if (!mongoose.Types.ObjectId.isValid(currentVideoId as string)) {
-        throw new ApiError(400, "Inavlid currentvideo id")
+        throw new ApiError(400, "Invalid currentVideoId");
     }
 
-    const currentvideo = await Video.findById(currentVideoId).lean()
+    const currentVideoObjectId = new mongoose.Types.ObjectId(currentVideoId as string);
+
+    const currentvideo = await Video.findById(currentVideoObjectId).lean();
     if (!currentvideo) {
-        throw new ApiError(404, "Current video not found")
+        throw new ApiError(404, "Current video not found");
     }
 
     const watchedVideoViews = await VideoView.find({
         user: userId,
         watchPercentage: { $gte: 90 }
-    }).select("video")
+    }).select("video");
 
-    const watchedVideoIds = watchedVideoViews.map(v => v.video.toString())
+    const watchedVideoIds = watchedVideoViews.map(v => v.video.toString());
+
+    const excludeIds = [
+        ...watchedVideoIds.map(id => new mongoose.Types.ObjectId(id)),
+        currentVideoObjectId
+    ];
 
     const sameChannelVideos = await Video.find({
         owner: currentvideo.owner,
-        _id: { $ne: currentvideo._id, $nin: watchedVideoIds },
+        _id: { $nin: excludeIds },
         isDeleted: false,
         isPublished: true
-    }).sort({ createdAt: -1 }).limit(5).populate("owner", "username avatar")
-
+    })
+        .sort({ createdAt: -1 })
+        .limit(5)
+        .populate("owner", "username avatar");
 
     const mostCommented = await Video.aggregate([
         {
             $match: {
                 isDeleted: false,
                 isPublished: true,
-                _id: { $nin: [...watchedVideoIds.map(id => new mongoose.Types.ObjectId(id)), currentvideo._id] }
+                _id: { $nin: excludeIds }
             }
         },
         {
@@ -329,14 +353,14 @@ const getRecommandationVideos = asyncHandler(async (req: Request, res: Response)
         },
         { $sort: { commentsCount: -1 } },
         { $limit: 5 }
-    ])
+    ]);
 
     const mostLiked = await Video.aggregate([
         {
             $match: {
                 isDeleted: false,
                 isPublished: true,
-                _id: { $nin: [...watchedVideoIds.map(id => new mongoose.Types.ObjectId(id)), currentvideo._id] }
+                _id: { $nin: excludeIds }
             }
         },
         {
@@ -350,42 +374,42 @@ const getRecommandationVideos = asyncHandler(async (req: Request, res: Response)
         {
             $addFields: { likeCount: { $size: "$likes" } }
         },
-        {
-            $sort: { likeCount: -1 }
-        },
-        {
-            $limit: 5
-        }
-    ])
+        { $sort: { likeCount: -1 } },
+        { $limit: 5 }
+    ]);
 
     const tagMatched = await Video.find({
         tags: { $in: currentvideo.tags },
-        _id: { $nin: [...watchedVideoIds, currentvideo._id.toString()] },
+        _id: { $nin: excludeIds.map(id => id.toString()) },
         isDeleted: false,
         isPublished: true
-    }).limit(5).populate("owner", "username avatar")
+    })
+        .limit(5)
+        .populate("owner", "username avatar");
 
     const recommendedMap = new Map<string, any>();
 
-    [...sameChannelVideos, ...mostCommented, ...mostLiked, ...tagMatched].forEach((video) => {
+    [...sameChannelVideos, ...mostCommented, ...mostLiked, ...tagMatched].forEach(video => {
         const id = (video._id || video._id?.toString()).toString();
         if (!recommendedMap.has(id)) {
-            recommendedMap.set(id, video)
+            recommendedMap.set(id, video);
         }
-    })
+    });
 
-    const recommended = Array.from(recommendedMap.values()).slice(0, 15);
+    const recommended = Array.from(recommendedMap.values()).filter(
+        video => video._id.toString() !== currentVideoObjectId.toString()
+    ).slice(0, 15);
 
     return res.status(200).json(
-        new ApiResponse(200, recommended, "Recommanded videos fetched successfully")
-    )
-
-})
+        new ApiResponse(200, recommended, "Recommended videos fetched successfully")
+    );
+});
 
 export {
     publishVideo,
     getVideoById,
     getAllVideos,
     updateVideo,
-    deleteVideo
+    deleteVideo,
+    getRecommandationVideos
 }

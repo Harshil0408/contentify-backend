@@ -1,10 +1,15 @@
 import { Router } from "express";
 import { isAuthenticated } from "../middlewares/authMiddleware.ts";
 import { upload } from "../middlewares/multer.middleware.ts";
-import { deleteVideo, getAllVideos, getVideoById, publishVideo, updateVideo } from "../controllers/video.controller.ts";
+import { deleteVideo, getAllVideos, getRecommandationVideos, getVideoById, publishVideo, updateVideo } from "../controllers/video.controller.ts";
 
 
 const router = Router()
+
+router.get('/recommend-video',
+    isAuthenticated,
+    getRecommandationVideos
+)
 
 router.post('/publish-video',
     isAuthenticated,
@@ -38,6 +43,7 @@ router.delete('/:videoId',
     isAuthenticated,
     deleteVideo
 )
+
 
 
 export default router

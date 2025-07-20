@@ -2,6 +2,7 @@ import dotenv from 'dotenv'
 import connectDB from './configs/index.ts'
 import { app } from './app.ts'
 
+
 dotenv.config()
 
 connectDB()

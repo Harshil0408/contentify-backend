@@ -10,6 +10,7 @@ import { Subscription } from "../models/subscription.model.ts";
 import { Video, VideoDocument } from "../models/video.model.ts";
 import { deleteCloudinaryFiles, uploadOnCloudinary } from "../utils/cloudinary.ts";
 import { GetAllVideosReqQuery, PublishVideoBody, PublishVideoFile, VideoUpdateBody } from "../types/video.types";
+import { Like } from "../models/like.model.ts";
 
 interface VideoIdParams {
     videoId: string;
@@ -57,48 +58,123 @@ const publishVideo = asyncHandler(async (req: Request, res: Response) => {
 })
 
 const getVideoById = asyncHandler(async (req: Request, res: Response) => {
-    const { videoId } = req.params as unknown as VideoIdParams;
-    const userId = getUserIdFromRequest(req);
+    const { videoId } = req.params;
+    const userId = getUserIdFromRequest(req); // your custom method
 
     if (!mongoose.Types.ObjectId.isValid(videoId)) {
         throw new ApiError(400, "Invalid video id");
     }
 
-    const videoDoc = await Video.findById(videoId).populate("owner", "username avatar");
-    if (!videoDoc) throw new ApiError(404, "Video not found");
+    const video = await Video.aggregate([
+        {
+            $match: {
+                _id: new mongoose.Types.ObjectId(videoId),
+                isDeleted: false,
+                isPublished: true
+            }
+        },
+        {
+            $lookup: {
+                from: "users",
+                localField: "owner",
+                foreignField: "_id",
+                as: "owner",
+                pipeline: [
+                    { $project: { _id: 1, username: 1, avatar: 1 } }
+                ]
+            }
+        },
+        { $unwind: "$owner" },
+        {
+            $lookup: {
+                from: "likes",
+                let: { videoId: "$_id" },
+                pipeline: [
+                    { $match: { $expr: { $eq: ["$video", "$$videoId"] } } },
+                    { $count: "likeCount" }
+                ],
+                as: "likes"
+            }
+        },
+        {
+            $lookup: {
+                from: "videoviews",
+                let: { videoId: "$_id" },
+                pipeline: [
+                    { $match: { $expr: { $eq: ["$video", "$$videoId"] } } },
+                    { $count: "viewCount" }
+                ],
+                as: "views"
+            }
+        },
+        {
+            $lookup: {
+                from: "likes",
+                let: { videoId: "$_id" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ["$video", "$$videoId"] },
+                                    { $eq: ["$likedBy", new mongoose.Types.ObjectId(userId)] }
+                                ]
+                            }
+                        }
+                    },
+                    { $project: { _id: 1 } }
+                ],
+                as: "isLikedArray"
+            }
+        },
+        {
+            $lookup: {
+                from: "subscriptions",
+                let: { ownerId: "$owner._id" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: {
+                                $and: [
+                                    { $eq: ["$channel", "$$ownerId"] },
+                                    { $eq: ["$subscriber", new mongoose.Types.ObjectId(userId)] }
+                                ]
+                            }
+                        }
+                    },
+                    { $project: { _id: 1 } }
+                ],
+                as: "isSubscribedArray"
+            }
+        },
+        {
+            $addFields: {
+                likeCount: { $ifNull: [{ $arrayElemAt: ["$likes.likeCount", 0] }, 0] },
+                viewCount: { $ifNull: [{ $arrayElemAt: ["$views.viewCount", 0] }, 0] },
+                isLiked: { $gt: [{ $size: "$isLikedArray" }, 0] },
+                isSubscribed: { $gt: [{ $size: "$isSubscribedArray" }, 0] }
+            }
+        },
+        {
+            $project: {
+                isLikedArray: 0,
+                isSubscribedArray: 0,
+                likes: 0,
+                views: 0,
+                __v: 0,
+                cloudinary_public_id: 0 // hide if not needed
+            }
+        }
+    ]);
 
-    const videoDurationInSec = Number(videoDoc.duration);
-    const videoObjectId = new mongoose.Types.ObjectId(videoId);
-
-    let view = await VideoView.findOne({ user: userId, video: videoId });
-
-    if (!view) {
-        await Video.findByIdAndUpdate(videoId, { $inc: { views: 1 } });
-        view = await VideoView.create({
-            user: userId,
-            video: videoId,
-            watchedTime: 0,
-            videoDuration: videoDurationInSec,
-            watchPercentage: 0,
-        });
+    if (!video || video.length === 0) {
+        throw new ApiError(404, "Video not found");
     }
 
-    await User.findByIdAndUpdate(userId, {
-        $addToSet: { watchHistory: videoObjectId },
-    });
-
-    const subscribed = await Subscription.exists({
-        subscriber: userId,
-        channel: videoDoc.owner._id,
-    });
-
-    const video = videoDoc.toObject();
-    video.isSubscribed = !!subscribed;
-
-    return res.status(200).json(
-        new ApiResponse(200, { video }, "Video fetched successfully")
-    );
+    return res.status(200).json(new ApiResponse(200, video[0], "Video fetched successfully"));
 });
+
+
 
 
 const updateWatchProgress = asyncHandler(async (req: Request, res: Response) => {
@@ -407,11 +483,35 @@ const getRecommandationVideos = asyncHandler(async (req: Request, res: Response)
     );
 });
 
+const getWatchUserHistory = asyncHandler(async (req: Request, res: Response) => {
+    const userId = getUserIdFromRequest(req);
+
+    const user = await User.findById(userId)
+        .populate({
+            path: "watchHistory",
+            populate: {
+                path: "owner",
+                select: "username avatar"
+            },
+            select: "title thumbnail duration views createdAt owner"
+        });
+
+    if (!user) {
+        throw new ApiError(404, "User not found");
+    }
+
+    return res.status(200).json(
+        new ApiResponse(200, user.watchHistory, "Watch history fetched successfully")
+    );
+});
+
+
 export {
     publishVideo,
     getVideoById,
     getAllVideos,
     updateVideo,
     deleteVideo,
-    getRecommandationVideos
+    getRecommandationVideos,
+    getWatchUserHistory
 }

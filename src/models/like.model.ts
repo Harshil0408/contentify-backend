@@ -12,18 +12,15 @@ interface LikeDoucment extends Document {
 const likeSchema = new mongoose.Schema<LikeDoucment>({
     video: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Video",
-        default: null
+        ref: "Video"
     },
     comment: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Comment",
-        default: null
+        ref: "Comment"
     },
     tweet: {
         type: mongoose.Schema.Types.ObjectId,
-        ref: "Tweet",
-        default: null
+        ref: "Tweet"
     },
     likedBy: {
         type: mongoose.Schema.Types.ObjectId,
@@ -32,8 +29,13 @@ const likeSchema = new mongoose.Schema<LikeDoucment>({
     }
 }, { timestamps: true })
 
-likeSchema.index({ video: 1, likedBy: 1 }, { unique: true, partialFilterExpression: { video: { $exists: true } } });
-likeSchema.index({ comment: 1, likedBy: 1 }, { unique: true, partialFilterExpression: { comment: { $exists: true } } });
-likeSchema.index({ tweet: 1, likedBy: 1 }, { unique: true, partialFilterExpression: { tweet: { $exists: true } } });
+likeSchema.index(
+    { video: 1, likedBy: 1 },
+    {
+        unique: true,
+        partialFilterExpression: { video: { $exists: true } }
+    }
+)
+
 
 export const Like: Model<LikeDoucment> = mongoose.model<LikeDoucment>("Like", likeSchema)

@@ -39,11 +39,13 @@ app.use(session({
 
 import authRoutes from "./routes/auth.routes.ts";
 import videoRoutes from './routes/video.routes.ts'
+import likeRoutes from './routes/like.routes.ts'
 
 app.use(passport.initialize());
 app.use(passport.session());
 
 app.use("/auth", authRoutes);
 app.use("/video", videoRoutes)
+app.use('/like', likeRoutes)
 
 export { app };

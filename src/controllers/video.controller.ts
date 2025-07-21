@@ -57,47 +57,49 @@ const publishVideo = asyncHandler(async (req: Request, res: Response) => {
 })
 
 const getVideoById = asyncHandler(async (req: Request, res: Response) => {
-
     const { videoId } = req.params as unknown as VideoIdParams;
-    const userId = getUserIdFromRequest(req)
+    const userId = getUserIdFromRequest(req);
 
     if (!mongoose.Types.ObjectId.isValid(videoId)) {
-        throw new ApiError(400, "Invalid video id")
+        throw new ApiError(400, "Invalid video id");
     }
 
-    const video = await Video.findById(videoId).populate("owner", "username avatar")
-    if (!video) throw new ApiError(404, "Video not found")
+    const videoDoc = await Video.findById(videoId).populate("owner", "username avatar");
+    if (!videoDoc) throw new ApiError(404, "Video not found");
 
-    const videoDurationInSec = Number(video.duration)
-    const videoObjectId = new mongoose.Types.ObjectId(videoId)
+    const videoDurationInSec = Number(videoDoc.duration);
+    const videoObjectId = new mongoose.Types.ObjectId(videoId);
 
-    let view = await VideoView.findOne({ user: userId, video: videoId })
+    let view = await VideoView.findOne({ user: userId, video: videoId });
 
     if (!view) {
-        await Video.findByIdAndUpdate(videoId, { $inc: { views: 1 } })
+        await Video.findByIdAndUpdate(videoId, { $inc: { views: 1 } });
         view = await VideoView.create({
             user: userId,
             video: videoId,
             watchedTime: 0,
             videoDuration: videoDurationInSec,
-            watchPercentage: 0
-        })
+            watchPercentage: 0,
+        });
     }
 
     await User.findByIdAndUpdate(userId, {
-        $addToSet: { watchHistory: videoObjectId }
-    })
+        $addToSet: { watchHistory: videoObjectId },
+    });
 
     const subscribed = await Subscription.exists({
         subscriber: userId,
-        channel: video.owner._id
-    })
+        channel: videoDoc.owner._id,
+    });
+
+    const video = videoDoc.toObject();
+    video.isSubscribed = !!subscribed;
 
     return res.status(200).json(
-        new ApiResponse(200, { video, isSubscribed: !!subscribed }, "Video fetched successfully")
-    )
+        new ApiResponse(200, { video }, "Video fetched successfully")
+    );
+});
 
-})
 
 const updateWatchProgress = asyncHandler(async (req: Request, res: Response) => {
     const userId = getUserIdFromRequest(req)

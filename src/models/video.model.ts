@@ -23,6 +23,7 @@ export interface VideoDocument extends Document {
     language: string;
     category: string;
     averageWatchTime: Number;
+    isSubscribed: boolean;
     createdAt?: Date
     updatedAt?: Date
 }

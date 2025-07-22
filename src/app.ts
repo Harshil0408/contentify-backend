@@ -9,8 +9,6 @@ import passport from "passport";
 import './services/passport.ts'
 import MongoStore from "connect-mongo";
 
-
-
 const app: Application = express();
 
 app.use(cors({
@@ -40,6 +38,7 @@ app.use(session({
 import authRoutes from "./routes/auth.routes.ts";
 import videoRoutes from './routes/video.routes.ts'
 import likeRoutes from './routes/like.routes.ts'
+import subscriptionRoutes from './routes/subscription.routes.ts'
 
 app.use(passport.initialize());
 app.use(passport.session());
@@ -47,5 +46,6 @@ app.use(passport.session());
 app.use("/auth", authRoutes);
 app.use("/video", videoRoutes)
 app.use('/like', likeRoutes)
+app.use('/subscription', subscriptionRoutes)
 
 export { app };

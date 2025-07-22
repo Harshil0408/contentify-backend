@@ -59,7 +59,7 @@ const publishVideo = asyncHandler(async (req: Request, res: Response) => {
 
 const getVideoById = asyncHandler(async (req: Request, res: Response) => {
     const { videoId } = req.params;
-    const userId = getUserIdFromRequest(req); // your custom method
+    const userId = getUserIdFromRequest(req);
 
     if (!mongoose.Types.ObjectId.isValid(videoId)) {
         throw new ApiError(400, "Invalid video id");
@@ -96,17 +96,7 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                 as: "likes"
             }
         },
-        {
-            $lookup: {
-                from: "videoviews",
-                let: { videoId: "$_id" },
-                pipeline: [
-                    { $match: { $expr: { $eq: ["$video", "$$videoId"] } } },
-                    { $count: "viewCount" }
-                ],
-                as: "views"
-            }
-        },
+
         {
             $lookup: {
                 from: "likes",
@@ -160,9 +150,8 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                 isLikedArray: 0,
                 isSubscribedArray: 0,
                 likes: 0,
-                views: 0,
                 __v: 0,
-                cloudinary_public_id: 0 // hide if not needed
+                cloudinary_public_id: 0
             }
         }
     ]);

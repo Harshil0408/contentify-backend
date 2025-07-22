@@ -6,8 +6,7 @@ import ApiResponse from "../utils/ApiResponse.ts";
 import asyncHandler from "../utils/asyncHandler.ts";
 import { VideoView } from "../models/videoView.model.ts";
 import { getUserIdFromRequest } from "../constants/index.ts";
-import { Subscription } from "../models/subscription.model.ts";
-import { Video, VideoDocument } from "../models/video.model.ts";
+import { Video } from "../models/video.model.ts";
 import { deleteCloudinaryFiles, uploadOnCloudinary } from "../utils/cloudinary.ts";
 import { GetAllVideosReqQuery, PublishVideoBody, PublishVideoFile, VideoUpdateBody } from "../types/video.types";
 import { Like } from "../models/like.model.ts";
@@ -62,8 +61,15 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
     const userId = getUserIdFromRequest(req);
 
     if (!mongoose.Types.ObjectId.isValid(videoId)) {
-        throw new ApiError(400, "Invalid video id");
+        throw new ApiError(400, "Invalid video ID");
     }
+
+    await User.findByIdAndUpdate(userId, {
+        $pull: { watchHistory: videoId },
+    });
+    await User.findByIdAndUpdate(userId, {
+        $push: { watchHistory: { $each: [videoId], $position: 0 } },
+    });
 
     const video = await Video.aggregate([
         {
@@ -96,7 +102,6 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                 as: "likes"
             }
         },
-
         {
             $lookup: {
                 from: "likes",
@@ -140,7 +145,6 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
         {
             $addFields: {
                 likeCount: { $ifNull: [{ $arrayElemAt: ["$likes.likeCount", 0] }, 0] },
-                viewCount: { $ifNull: [{ $arrayElemAt: ["$views.viewCount", 0] }, 0] },
                 isLiked: { $gt: [{ $size: "$isLikedArray" }, 0] },
                 isSubscribed: { $gt: [{ $size: "$isSubscribedArray" }, 0] }
             }
@@ -160,36 +164,42 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
         throw new ApiError(404, "Video not found");
     }
 
-    return res.status(200).json(new ApiResponse(200, video[0], "Video fetched successfully"));
+    return res.status(200).json(
+        new ApiResponse(200, video[0], "Video fetched and added to watch history")
+    );
 });
 
 
-
-
 const updateWatchProgress = asyncHandler(async (req: Request, res: Response) => {
-    const userId = getUserIdFromRequest(req)
+    const userId = getUserIdFromRequest(req);
     const { videoId, watchedTime } = req.body as {
         videoId: string;
         watchedTime: number;
-    }
+    };
 
-    const videoView = await VideoView.findOne({ user: userId, video: videoId })
+    const videoView = await VideoView.findOne({ user: userId, video: videoId });
     if (!videoView) {
-        throw new ApiError(404, "Video view not found")
+        throw new ApiError(404, "Video view not found");
     }
 
     const totalDuration = videoView.videoDuration || 1;
-    const percentage = Math.min(100, (watchedTime / totalDuration) * 100)
+    const percentage = Math.min(100, (watchedTime / totalDuration) * 100);
 
     videoView.watchedTime = watchedTime;
     videoView.watchPercentage = percentage;
-    await videoView.save()
+    await videoView.save();
+
+    await User.findByIdAndUpdate(userId, {
+        $pull: { watchHistory: videoId },
+    });
+    await User.findByIdAndUpdate(userId, {
+        $push: { watchHistory: { $each: [videoId], $position: 0 } },
+    });
 
     return res.status(200).json(
         new ApiResponse(200, videoView, "Watched progress updated")
-    )
-
-})
+    );
+});
 
 const getAllVideos = asyncHandler(async (req: Request, res: Response) => {
     const { page = 1, limit = 10, query, sortBy = "createdAt", sortType = "desc", userId } = req.query as unknown as GetAllVideosReqQuery
@@ -494,6 +504,161 @@ const getWatchUserHistory = asyncHandler(async (req: Request, res: Response) => 
     );
 });
 
+const likedVideosController = asyncHandler(async (req: Request, res: Response) => {
+    const userId = getUserIdFromRequest(req)
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new ApiError(400, "Invalid UserId")
+    }
+
+    const likedVideos = await Like.aggregate([
+        {
+            $match: {
+                likedBy: new mongoose.Types.ObjectId(userId),
+                video: { $ne: null }
+            }
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "video",
+                foreignField: "_id",
+                as: "video"
+            }
+        },
+        {
+            $unwind: "$video"
+        },
+        {
+            $lookup: {
+                from: 'users',
+                localField: 'video.owner',
+                foreignField: "_id",
+                as: "video.owner"
+            }
+        },
+        {
+            $unwind: "$video.owner"
+        },
+        {
+            $project: {
+                _id: 1,
+                likedAt: "$createdAt",
+                videoId: "$video._id",
+                title: "$video.title",
+                thumbnail: "$video.thumbnail",
+                views: "$video.views",
+                duration: "$video.duration",
+                owner: {
+                    _id: "$video.owner._id",
+                    name: "$video.owner.name",
+                    avatar: "$video.owner.avatar",
+                }
+            }
+        },
+        {
+            $sort: { likedAt: -1 }
+        }
+    ])
+
+    return res.status(200).json(
+        new ApiResponse(200, { totalLikedVideos: likedVideos.length, videos: likedVideos }, "Liked videos fetched successfully")
+    )
+
+})
+
+const getUsersVideos = asyncHandler(async (req: Request, res: Response) => {
+    const userId = getUserIdFromRequest(req)
+
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new ApiError(400, "Invalid userId")
+    }
+
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    const videos = await Video.aggregatePaginate(
+        Video.aggregate([
+            {
+                $match: {
+                    owner: new mongoose.Types.ObjectId(userId),
+                    isDeleted: false
+                }
+            },
+            {
+                $lookup: {
+                    from: 'users',
+                    localField: 'owner',
+                    foreignField: '_id',
+                    as: "owner"
+                }
+            },
+            {
+                $unwind: '$owner'
+            },
+            {
+                $lookup: {
+                    from: 'likes',
+                    localField: '_id',
+                    foreignField: 'video',
+                    as: 'likes'
+                }
+            },
+
+            {
+                $sort: {
+                    createdAt: -1
+                }
+            },
+            {
+                $project: {
+                    thumbnail: 1,
+                    videoFile: 1,
+                    title: 1,
+                    description: 1,
+                    views: 1,
+                    createdAt: 1,
+                    duration: 1,
+                    owner: {
+                        _id: "$owner._id",
+                        username: "$owner.username",
+                        avatar: "$owner.avatar",
+                    },
+                    likesCount: { $size: "$likes" }
+                }
+            }
+        ]),
+        {
+            page,
+            limit
+        }
+    )
+
+    return res.status(200).json(
+        new ApiResponse(200, videos, "User's video fetched successfully")
+    )
+
+})
+
+const getUserVideoWatchProgress = asyncHandler(async (req: Request, res: Response) => {
+    const userId = getUserIdFromRequest(req)
+    const { videoId } = req.params
+
+    if (!userId || !videoId) {
+        throw new ApiError(400, "userId or videoId is not provided")
+    }
+
+    const watchTime = await VideoView.findOne({
+        video: videoId,
+        user: userId
+    })
+
+    return res.status(200).json(
+        new ApiResponse(200, watchTime, "WatchTime fetched successfully")
+    )
+
+})
+
 
 export {
     publishVideo,
@@ -502,5 +667,9 @@ export {
     updateVideo,
     deleteVideo,
     getRecommandationVideos,
-    getWatchUserHistory
+    getWatchUserHistory,
+    likedVideosController,
+    getUsersVideos,
+    updateWatchProgress,
+    getUserVideoWatchProgress
 }

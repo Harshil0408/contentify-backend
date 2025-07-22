@@ -22,7 +22,7 @@ const videoViewSchema: Schema<VideoViewDocument> = new mongoose.Schema<VideoView
     },
     viewedAt: {
         type: Date,
-        default: Date.now // ✅ fix here
+        default: Date.now 
     },
     watchedTime: {
         type: Number,

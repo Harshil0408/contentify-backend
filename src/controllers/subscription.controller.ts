@@ -4,7 +4,6 @@ import { getUserIdFromRequest } from "../constants/index.ts";
 import ApiError from "../utils/ApiError.ts";
 import { Subscription } from "../models/subscription.model.ts";
 import ApiResponse from "../utils/ApiResponse.ts";
-import { onlineUsers } from "../types/socketManager.ts";
 import { User } from "../models/user.model.ts";
 
 const toggleSubscribeChannel = asyncHandler(async (req: Request, res: Response) => {

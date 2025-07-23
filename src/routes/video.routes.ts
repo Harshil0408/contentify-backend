@@ -1,10 +1,12 @@
 import { Router } from "express";
 import { isAuthenticated } from "../middlewares/authMiddleware.ts";
 import { upload } from "../middlewares/multer.middleware.ts";
-import { deleteVideo, getAllVideos, getRecommandationVideos, getUsersVideos, getUserVideoWatchProgress, getVideoById, getWatchUserHistory, likedVideosController, publishVideo, updateVideo, updateWatchProgress } from "../controllers/video.controller.ts";
+import { deleteVideo, getAllVideoProgressForUser, getAllVideos, getRecommandationVideos, getSubscribedChannelVideos, getUsersVideos, getVideoById, getWatchUserHistory, likedVideosController, publishVideo, updateVideo, updateWatchProgress } from "../controllers/video.controller.ts";
 
 
 const router = Router()
+
+
 
 router.get('/recommend-video',
     isAuthenticated,
@@ -64,9 +66,10 @@ router.patch('/update/watch-progress',
     updateWatchProgress
 )
 
-router.get('/watch-progress/:videoId',
+router.get('/video/watch-progress',
     isAuthenticated,
-    getUserVideoWatchProgress
+    getAllVideoProgressForUser
 )
+
 
 export default router

@@ -10,6 +10,7 @@ import { Video } from "../models/video.model.ts";
 import { deleteCloudinaryFiles, uploadOnCloudinary } from "../utils/cloudinary.ts";
 import { GetAllVideosReqQuery, PublishVideoBody, PublishVideoFile, VideoUpdateBody } from "../types/video.types";
 import { Like } from "../models/like.model.ts";
+import { Subscription } from "../models/subscription.model.ts";
 
 interface VideoIdParams {
     videoId: string;
@@ -640,21 +641,69 @@ const getUsersVideos = asyncHandler(async (req: Request, res: Response) => {
 
 })
 
-const getUserVideoWatchProgress = asyncHandler(async (req: Request, res: Response) => {
+const getAllVideoProgressForUser = asyncHandler(async (req: Request, res: Response) => {
     const userId = getUserIdFromRequest(req)
-    const { videoId } = req.params
 
-    if (!userId || !videoId) {
-        throw new ApiError(400, "userId or videoId is not provided")
+    if (!userId) {
+        throw new ApiError(401, "Unauthorized")
     }
 
-    const watchTime = await VideoView.findOne({
-        video: videoId,
-        user: userId
-    })
+    const progressList = await VideoView.find({ user: userId }).select("video watchedTime videoDuration watchPercentage").lean()
+
+    const progressMap = progressList.reduce((acc, item) => {
+        acc[item.video.toString()] = {
+            watchedTime: item.watchedTime,
+            videoDuration: item.videoDuration,
+            watchPercentage: item.watchPercentage
+        }
+        return acc;
+    }, {} as Record<string, { watchedTime: number; videoDuration: number, watchPercentage: number }>)
 
     return res.status(200).json(
-        new ApiResponse(200, watchTime, "WatchTime fetched successfully")
+        new ApiResponse(200, progressMap, "Video Progress fetched")
+    )
+
+})
+
+const getSubscribedChannelVideos = asyncHandler(async (req: Request, res: Response) => {
+    const userId = getUserIdFromRequest(req)
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+
+    const subscription = Subscription.find({ subscriber: userId }).select("channel")
+
+    const subscribedChannelIds = (await subscription).map((sub) => sub.channel)
+
+    if (!subscribedChannelIds.length) {
+        return res.status(200).json(
+            new ApiResponse(200, [], "No subscribed channels")
+        )
+    }
+
+    const aggregateQuery = Video.aggregate([
+        {
+            $match: {
+                isDeleted: false,
+                isPrivate: false,
+                isPublished: true,
+                owner: { $in: subscribedChannelIds }
+            }
+        },
+        {
+            $sort: { createdAt: -1 }
+        },
+
+    ])
+
+    const options = {
+        page,
+        limit
+    }
+
+    const result = await Video.aggregatePaginate(aggregateQuery, options)
+
+    return res.status(200).json(
+        new ApiResponse(200, result, "Subscribed channel videos fetched successfully")
     )
 
 })
@@ -671,5 +720,6 @@ export {
     likedVideosController,
     getUsersVideos,
     updateWatchProgress,
-    getUserVideoWatchProgress
+    getAllVideoProgressForUser,
+    getSubscribedChannelVideos
 }

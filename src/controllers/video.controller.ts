@@ -1,16 +1,16 @@
 import mongoose from "mongoose";
-import ApiError from "../utils/ApiError.ts";
 import { Request, Response } from "express";
+import ApiError from "../utils/ApiError.ts";
 import { User } from "../models/user.model.ts";
+import { Like } from "../models/like.model.ts";
+import { Video } from "../models/video.model.ts";
 import ApiResponse from "../utils/ApiResponse.ts";
 import asyncHandler from "../utils/asyncHandler.ts";
 import { VideoView } from "../models/videoView.model.ts";
 import { getUserIdFromRequest } from "../constants/index.ts";
-import { Video } from "../models/video.model.ts";
+import { Subscription } from "../models/subscription.model.ts";
 import { deleteCloudinaryFiles, uploadOnCloudinary } from "../utils/cloudinary.ts";
 import { GetAllVideosReqQuery, PublishVideoBody, PublishVideoFile, VideoUpdateBody } from "../types/video.types";
-import { Like } from "../models/like.model.ts";
-import { Subscription } from "../models/subscription.model.ts";
 
 interface VideoIdParams {
     videoId: string;
@@ -65,6 +65,7 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
         throw new ApiError(400, "Invalid video ID");
     }
 
+    // 📌 1. Track in watch history
     await User.findByIdAndUpdate(userId, {
         $pull: { watchHistory: videoId },
     });
@@ -72,13 +73,37 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
         $push: { watchHistory: { $each: [videoId], $position: 0 } },
     });
 
+    // 📌 2. Check if view already exists
+    const existingView = await VideoView.findOne({
+        user: userId,
+        video: videoId,
+    });
+
+    if (!existingView) {
+        // ⬆️ 3. If not viewed before → increment views
+        await Video.findByIdAndUpdate(videoId, {
+            $inc: { views: 1 },
+        });
+
+        // 📌 4. Create initial VideoView record
+        await VideoView.create({
+            user: userId,
+            video: videoId,
+            viewedAt: new Date(),
+            watchedTime: 0,
+            videoDuration: 0,
+            watchPercentage: 0,
+        });
+    }
+
+    // 📌 5. Then continue fetching video details
     const video = await Video.aggregate([
         {
             $match: {
                 _id: new mongoose.Types.ObjectId(videoId),
                 isDeleted: false,
-                isPublished: true
-            }
+                isPublished: true,
+            },
         },
         {
             $lookup: {
@@ -86,10 +111,8 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                 localField: "owner",
                 foreignField: "_id",
                 as: "owner",
-                pipeline: [
-                    { $project: { _id: 1, username: 1, avatar: 1 } }
-                ]
-            }
+                pipeline: [{ $project: { _id: 1, username: 1, avatar: 1 } }],
+            },
         },
         { $unwind: "$owner" },
         {
@@ -98,10 +121,10 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                 let: { videoId: "$_id" },
                 pipeline: [
                     { $match: { $expr: { $eq: ["$video", "$$videoId"] } } },
-                    { $count: "likeCount" }
+                    { $count: "likeCount" },
                 ],
-                as: "likes"
-            }
+                as: "likes",
+            },
         },
         {
             $lookup: {
@@ -113,15 +136,15 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                             $expr: {
                                 $and: [
                                     { $eq: ["$video", "$$videoId"] },
-                                    { $eq: ["$likedBy", new mongoose.Types.ObjectId(userId)] }
-                                ]
-                            }
-                        }
+                                    { $eq: ["$likedBy", new mongoose.Types.ObjectId(userId)] },
+                                ],
+                            },
+                        },
                     },
-                    { $project: { _id: 1 } }
+                    { $project: { _id: 1 } },
                 ],
-                as: "isLikedArray"
-            }
+                as: "isLikedArray",
+            },
         },
         {
             $lookup: {
@@ -133,22 +156,22 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                             $expr: {
                                 $and: [
                                     { $eq: ["$channel", "$$ownerId"] },
-                                    { $eq: ["$subscriber", new mongoose.Types.ObjectId(userId)] }
-                                ]
-                            }
-                        }
+                                    { $eq: ["$subscriber", new mongoose.Types.ObjectId(userId)] },
+                                ],
+                            },
+                        },
                     },
-                    { $project: { _id: 1 } }
+                    { $project: { _id: 1 } },
                 ],
-                as: "isSubscribedArray"
-            }
+                as: "isSubscribedArray",
+            },
         },
         {
             $addFields: {
                 likeCount: { $ifNull: [{ $arrayElemAt: ["$likes.likeCount", 0] }, 0] },
                 isLiked: { $gt: [{ $size: "$isLikedArray" }, 0] },
-                isSubscribed: { $gt: [{ $size: "$isSubscribedArray" }, 0] }
-            }
+                isSubscribed: { $gt: [{ $size: "$isSubscribedArray" }, 0] },
+            },
         },
         {
             $project: {
@@ -156,20 +179,21 @@ const getVideoById = asyncHandler(async (req: Request, res: Response) => {
                 isSubscribedArray: 0,
                 likes: 0,
                 __v: 0,
-                cloudinary_public_id: 0
-            }
-        }
+                cloudinary_public_id: 0,
+            },
+        },
     ]);
 
     if (!video || video.length === 0) {
         throw new ApiError(404, "Video not found");
     }
 
-    return res.status(200).json(
-        new ApiResponse(200, video[0], "Video fetched and added to watch history")
-    );
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(200, video[0], "Video fetched and added to watch history")
+        );
 });
-
 
 const updateWatchProgress = asyncHandler(async (req: Request, res: Response) => {
     const userId = getUserIdFromRequest(req);

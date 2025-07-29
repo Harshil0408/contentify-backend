@@ -12,6 +12,7 @@ router.post('/toggle-subscribe/:channelId',
 
 router.get(
     '/subscribed-videos',
+    isAuthenticated,
     getSubscribedChannelVideos
 )
 

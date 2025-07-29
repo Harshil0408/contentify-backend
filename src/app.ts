@@ -8,6 +8,7 @@ import session from "express-session";
 import passport from "passport";
 import './services/passport.ts'
 import MongoStore from "connect-mongo";
+import morgan from 'morgan'
 
 const app: Application = express();
 
@@ -19,6 +20,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(morgan("dev"))
 
 app.use(session({
     secret: process.env.SESSION_SECRET!,

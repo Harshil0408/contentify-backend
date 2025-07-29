@@ -11,6 +11,7 @@ import { getUserIdFromRequest } from "../constants/index.ts";
 import { Subscription } from "../models/subscription.model.ts";
 import { deleteCloudinaryFiles, uploadOnCloudinary } from "../utils/cloudinary.ts";
 import { GetAllVideosReqQuery, PublishVideoBody, PublishVideoFile, VideoUpdateBody } from "../types/video.types";
+import { WatchLater } from "../models/watchLater.ts";
 
 interface VideoIdParams {
     videoId: string;
@@ -644,6 +645,7 @@ const getUsersVideos = asyncHandler(async (req: Request, res: Response) => {
                     views: 1,
                     createdAt: 1,
                     duration: 1,
+                    isPublished: 1,
                     owner: {
                         _id: "$owner._id",
                         username: "$owner.username",
@@ -732,6 +734,108 @@ const getSubscribedChannelVideos = asyncHandler(async (req: Request, res: Respon
 
 })
 
+const togglePublishVideo = asyncHandler(async (req: Request, res: Response) => {
+    const { videoId } = req.params
+
+    if (!mongoose.Types.ObjectId.isValid(videoId)) {
+        throw new ApiError(400, "Invalid videoId")
+    }
+
+    const video = await Video.findById(videoId)
+
+    if (!video) {
+        throw new ApiError(404, "Video not found")
+    }
+
+    video.isPublished = !video.isPublished
+    video.save()
+
+    return res.status(200).json(
+        new ApiResponse(200, null, `Video has been ${video.isPublished ? 'Published' : "Unpublished"}`)
+    )
+
+})
+
+const toggleVideoToWatchLater = asyncHandler(async (req: Request, res: Response) => {
+    const { videoId } = req.params
+    const userId = getUserIdFromRequest(req)
+
+    const existToWatchLater = await WatchLater.findOne({ video: videoId, user: userId })
+
+    if (existToWatchLater) {
+        await WatchLater.deleteOne({ video: videoId, user: userId })
+        return res.status(200).json(
+            new ApiResponse(200, null, "Video removed from watch later successfully")
+        )
+    }
+
+    await WatchLater.create({ video: videoId, user: userId })
+    return res.status(200).json(
+        new ApiResponse(200, null, "Video added to watch later successfully")
+    )
+
+})
+
+const getVideosOfWatchLater = asyncHandler(async (req: Request, res: Response) => {
+    const userId = getUserIdFromRequest(req);
+
+    const result = await WatchLater.aggregate([
+        {
+            $match: {
+                user: new mongoose.Types.ObjectId(userId)
+            }
+        },
+        {
+            $lookup: {
+                from: "videos",
+                localField: "video",
+                foreignField: "_id",
+                as: "videoData"
+            }
+        },
+        {
+            $unwind: "$videoData"
+        },
+        {
+            $lookup: {
+                from: "users",
+                let: { ownerId: "$videoData.owner" },
+                pipeline: [
+                    {
+                        $match: {
+                            $expr: { $eq: ["$_id", "$$ownerId"] }
+                        }
+                    },
+                    {
+                        $project: {
+                            _id: 1,
+                            username: 1,
+                            avatar: 1
+                        }
+                    }
+                ],
+                as: "ownerInfo"
+            }
+        },
+        {
+            $unwind: "$ownerInfo"
+        },
+        {
+            $project: {
+                _id: 0,
+                video: "$videoData",
+                owner: "$ownerInfo"
+            }
+        }
+    ]);
+
+    res.status(200).json(
+        new ApiResponse(200, {
+            count: result.length,
+            videos: result
+        }, "Videos fetched successfully")
+    );
+});
 
 export {
     publishVideo,
@@ -745,5 +849,8 @@ export {
     getUsersVideos,
     updateWatchProgress,
     getAllVideoProgressForUser,
-    getSubscribedChannelVideos
+    getSubscribedChannelVideos,
+    togglePublishVideo,
+    toggleVideoToWatchLater,
+    getVideosOfWatchLater
 }

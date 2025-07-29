@@ -5,7 +5,6 @@ import { IUser, User } from "../models/user.model.ts";
 export const isAuthenticated = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.cookies.accessToken;
   if (!authHeader) {
-    console.log("asdasd")
     return res.status(401).json({ message: "Unauthorized" });
   }
 

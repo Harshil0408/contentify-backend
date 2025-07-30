@@ -830,10 +830,7 @@ const getVideosOfWatchLater = asyncHandler(async (req: Request, res: Response) =
     ]);
 
     res.status(200).json(
-        new ApiResponse(200, {
-            count: result.length,
-            videos: result
-        }, "Videos fetched successfully")
+        new ApiResponse(200, result, "Videos fetched successfully")
     );
 });
 
